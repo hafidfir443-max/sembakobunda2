@@ -15,46 +15,34 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Buat Project Flutter & Pasang WebView
+      - name: Buat Project Flutter & Build APK
         run: |
           flutter create --org com.toko.app --project-name toko_app app
           cd app
           flutter pub add webview_flutter
-
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
           sed -i "s/android:label=\"toko_app\"/android:label=\"${{ inputs.app_name }}\"/" android/app/src/main/AndroidManifest.xml
-
           cat << 'EOF' > lib/main.dart
           import 'package:flutter/material.dart';
           import 'package:webview_flutter/webview_flutter.dart';
-
-          void main() => runApp(const MaterialApp(
-                debugShowCheckedModeBanner: false,
-                home: WebApp(),
-              ));
-
+          void main() => runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebApp()));
           class WebApp extends StatefulWidget {
             const WebApp({super.key});
             @override
             State<WebApp> createState() => _WebAppState();
           }
-
           class _WebAppState extends State<WebApp> {
             late final WebViewController controller;
-
             @override
             void initState() {
               super.initState();
@@ -62,14 +50,22 @@ jobs:
                 ..setJavaScriptMode(JavaScriptMode.unrestricted)
                 ..loadRequest(Uri.parse('${{ inputs.website_url }}'));
             }
-
             @override
             Widget build(BuildContext context) {
               return PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, _) async {
-                  if (await controller.canGoBack()) {
-                    await controller.goBack();
-                  }
+                  if (await controller.canGoBack()) await controller.goBack();
                 },
-                child: Scaffold(
+                child: Scaffold(body: SafeArea(child: WebViewWidget(controller: controller))),
+              );
+            }
+          }
+          EOF
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk

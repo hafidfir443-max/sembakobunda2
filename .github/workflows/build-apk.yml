@@ -29,7 +29,7 @@ jobs:
         run: |
           flutter create --org com.toko.app --project-name toko_app app
           cd app
-          flutter pub add webview_flutter
+          flutter pub add webview_flutter webview_flutter_android file_picker
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
           sed -i "s/android:label=\"toko_app\"/android:label=\"${{ inputs.app_name }}\"/" android/app/src/main/AndroidManifest.xml
           if [ -f android/app/build.gradle.kts ]; then
@@ -40,21 +40,49 @@ jobs:
           cat << 'EOF' > lib/main.dart
           import 'package:flutter/material.dart';
           import 'package:webview_flutter/webview_flutter.dart';
-          void main() => runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: WebApp()));
+          import 'package:webview_flutter_android/webview_flutter_android.dart';
+          import 'package:file_picker/file_picker.dart';
+
+          void main() => runApp(const MaterialApp(
+                debugShowCheckedModeBanner: false,
+                home: WebApp(),
+              ));
+
           class WebApp extends StatefulWidget {
             const WebApp({super.key});
             @override
             State<WebApp> createState() => _WebAppState();
           }
+
           class _WebAppState extends State<WebApp> {
             late final WebViewController controller;
+
             @override
             void initState() {
               super.initState();
               controller = WebViewController()
                 ..setJavaScriptMode(JavaScriptMode.unrestricted)
                 ..loadRequest(Uri.parse('${{ inputs.website_url }}'));
+
+              if (controller.platform is AndroidWebViewController) {
+                (controller.platform as AndroidWebViewController)
+                    .setOnShowFileSelector((FileSelectorParams params) async {
+                  final isImage = params.acceptTypes.any((t) => t.startsWith('image/'));
+                  final result = await FilePicker.platform.pickFiles(
+                    type: isImage ? FileType.image : FileType.any,
+                    allowMultiple: params.mode == FileSelectorMode.openMultiple,
+                  );
+                  if (result != null) {
+                    return result.files
+                        .where((f) => f.path != null)
+                        .map((f) => Uri.file(f.path!).toString())
+                        .toList();
+                  }
+                  return <String>[];
+                });
+              }
             }
+
             @override
             Widget build(BuildContext context) {
               return PopScope(
